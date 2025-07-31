@@ -24,6 +24,7 @@ partition_disk() {
     fi
 
     partprobe "$DISK_TARGET"
+    sleep 3 # 等待 udev 创建设备节点
     
     echo "--> 正在格式化分区..."
     mkfs.fat -F 32 "$EFI_PART"
