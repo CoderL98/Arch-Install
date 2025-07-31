@@ -14,17 +14,47 @@ partition_disk() {
     if [ -n "$SWAP_SIZE" ]; then
         sgdisk -n 2:0:+"$SWAP_SIZE" -t 2:8200 -c 2:"Linux Swap"
         sgdisk -n 3:0:0 -t 3:8300 -c 3:"Linux Root (Btrfs)"
-        EFI_PART="${DISK_TARGET}p1"
-        SWAP_PART="${DISK_TARGET}p2"
-        ROOT_PART="${DISK_TARGET}p3"
+        if [[ $DISK_TARGET == /dev/nvme* || $DISK_TARGET == /dev/mmcblk* ]]; then
+            EFI_PART="${DISK_TARGET}p1"
+            SWAP_PART="${DISK_TARGET}p2"
+            ROOT_PART="${DISK_TARGET}p3"
+        else
+            EFI_PART="${DISK_TARGET}1"
+            SWAP_PART="${DISK_TARGET}2"
+            ROOT_PART="${DISK_TARGET}3"
+        fi
     else
         sgdisk -n 2:0:0 -t 2:8300 -c 2:"Linux Root (Btrfs)"
-        EFI_PART="${DISK_TARGET}p1"
-        ROOT_PART="${DISK_TARGET}p2"
+        if [[ $DISK_TARGET == /dev/nvme* || $DISK_TARGET == /dev/mmcblk* ]]; then
+            EFI_PART="${DISK_TARGET}p1"
+            ROOT_PART="${DISK_TARGET}p2"
+        else
+            EFI_PART="${DISK_TARGET}1"
+            ROOT_PART="${DISK_TARGET}2"
+        fi
     fi
 
     partprobe "$DISK_TARGET"
-    sleep 3 # 等待 udev 创建设备节点
+    
+    # 等待分区设备节点创建
+    echo "--> 正在等待分区设备创建..."
+    local all_parts_found=0
+    for i in {1..10}; do
+        # 检查所有必需的分区是否存在
+        if [ -b "$EFI_PART" ] && [ -b "$ROOT_PART" ] && { [ -z "$SWAP_PART" ] || [ -b "$SWAP_PART" ]; }; then
+            all_parts_found=1
+            break
+        fi
+        echo "    ...等待中 (尝试 $i/10)"
+        sleep 1
+    done
+
+    if [ "$all_parts_found" -eq 0 ]; then
+        echo "错误: 分区设备在10秒后仍未创建。请检查 dmesg 输出。"
+        ls -l /dev/ | grep "$(basename "$DISK_TARGET")"
+        exit 1
+    fi
+    echo "--> 所有分区设备已找到。"
     
     echo "--> 正在格式化分区..."
     mkfs.fat -F 32 "$EFI_PART"
