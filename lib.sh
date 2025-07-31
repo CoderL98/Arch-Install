@@ -24,96 +24,79 @@ check_root() {
 # 交互式选择软件包
 select_packages() {
     echo "--> 配置可选软件包安装:"
-    # 使用 dialog 创建菜单，如果 dialog 不存在则回退到简单模式
-    if command -v dialog &> /dev/null; then
-        # Pacman
-        pacman_choices=()
-        for i in "${!pacman_apps[@]}"; do
-            idx=$((i * 3))
-            pacman_choices+=("${pacman_apps[idx]}" "${pacman_apps[idx+1]}" "${pacman_apps[idx+2]}")
-        done
-        dialog --checklist "选择要从 Pacman 安装的软件 (使用空格键选择):" 20 70 15 "${pacman_choices[@]}" 2> /tmp/pacman_choices_output
-        while read -r choice; do
-            SELECTED_PACMAN_APPS+=("$choice")
-        done < /tmp/pacman_choices_output
+    local DIALOG_OUTPUT_PACMAN="/tmp/pacman_choices_output.$$"
+    local DIALOG_OUTPUT_AUR="/tmp/aur_choices_output.$$"
+    trap 'rm -f "$DIALOG_OUTPUT_PACMAN" "$DIALOG_OUTPUT_AUR"' EXIT
 
-        # AUR
-        aur_choices=()
-         for i in "${!aur_apps[@]}"; do
-            idx=$((i * 3))
-            aur_choices+=("${aur_apps[idx]}" "${aur_apps[idx+1]}" "${aur_apps[idx+2]}")
-        done
-        dialog --checklist "选择要从 AUR 安装的软件 (使用空格键选择):" 20 70 15 "${aur_choices[@]}" 2> /tmp/aur_choices_output
-        while read -r choice; do
-            SELECTED_AUR_APPS+=("$choice")
-        done < /tmp/aur_choices_output
-        rm -f /tmp/pacman_choices_output /tmp/aur_choices_output
-    else
-        echo "警告: 'dialog' 未安装，将使用简单的文本模式。"
-        echo "选择 Pacman 软件包 (输入数字, 以空格分隔):"
-        for i in "${!pacman_apps[@]}"; do
-            idx=$((i * 3))
-            echo "$((i/3+1))) ${pacman_apps[idx+1]}"
-        done
-        read -r -p "选择: " choices_input
-        for choice_num in $choices_input; do
-            idx=$(((choice_num-1) * 3))
-            SELECTED_PACMAN_APPS+=("${pacman_apps[idx]}")
-        done
+    # Pacman
+    local pacman_choices=()
+    for i in $(seq 0 $(( ${#pacman_apps[@]} / 3 - 1 )) ); do
+        local idx=$((i * 3))
+        pacman_choices+=("${pacman_apps[idx]}" "${pacman_apps[idx+1]}" "${pacman_apps[idx+2]}")
+    done
+    dialog --checklist "选择要从 Pacman 安装的软件 (使用空格键选择):" 20 70 15 "${pacman_choices[@]}" 2> "$DIALOG_OUTPUT_PACMAN"
+    while read -r choice; do
+        SELECTED_PACMAN_APPS+=("$choice")
+    done < "$DIALOG_OUTPUT_PACMAN"
 
-        echo "选择 AUR 软件包 (输入数字, 以空格分隔):"
-        for i in "${!aur_apps[@]}"; do
-            idx=$((i * 3))
-            echo "$((i/3+1))) ${aur_apps[idx+1]}"
-        done
-        read -r -p "选择: " choices_input
-        for choice_num in $choices_input; do
-            idx=$(((choice_num-1) * 3))
-            SELECTED_AUR_APPS+=("${aur_apps[idx]}")
-        done
-    fi
+    # AUR
+    local aur_choices=()
+    for i in $(seq 0 $(( ${#aur_apps[@]} / 3 - 1 )) ); do
+        local idx=$((i * 3))
+        aur_choices+=("${aur_apps[idx]}" "${aur_apps[idx+1]}" "${aur_apps[idx+2]}")
+    done
+    dialog --checklist "选择要从 AUR 安装的软件 (使用空格键选择):" 20 70 15 "${aur_choices[@]}" 2> "$DIALOG_OUTPUT_AUR"
+    while read -r choice; do
+        SELECTED_AUR_APPS+=("$choice")
+    done < "$DIALOG_OUTPUT_AUR"
+    
+    rm -f "$DIALOG_OUTPUT_PACMAN" "$DIALOG_OUTPUT_AUR"
+    trap - EXIT
 }
 
 
 # 交互式配置（如果变量为空）
 interactive_setup() {
+    # --- Dialog 模式 ---
+    local DIALOG_OUTPUT="/tmp/dialog_output.$$"
+    trap 'rm -f "$DIALOG_OUTPUT"' EXIT
+
     # 交互式选择磁盘
     if [ -z "$DISK_TARGET" ]; then
-        echo "可用磁盘列表:"
-        mapfile -t options < <(lsblk -dn -o NAME,SIZE,TYPE | awk '$3=="disk" {print "/dev/"$1 " ("$2")"}')
-        PS3="请选择要安装Arch Linux的磁盘: "
-        select DISK_INFO in "${options[@]}"; do
-            if [[ -n "$DISK_INFO" ]]; then
-                DISK_TARGET=$(echo "$DISK_INFO" | awk '{print $1}')
-                break
-            else
-                echo "无效的选择，请重新选择。"
-            fi
-        done
+        mapfile -t options < <(lsblk -dn -o NAME,SIZE,TYPE | awk '$3=="disk" {print "/dev/"$1, "("$2")"}')
+        dialog --title "选择目标磁盘" --menu "请选择要安装 Arch Linux 的磁盘:" 15 60 4 "${options[@]}" 2> "$DIALOG_OUTPUT"
+        DISK_TARGET=$(cat "$DIALOG_OUTPUT")
+        if [ -z "$DISK_TARGET" ]; then echo "错误：未选择磁盘。"; exit 1; fi
     fi
-    echo "将在磁盘 $DISK_TARGET 上进行安装。"
-    
+    dialog --title "确认磁盘" --msgbox "将在磁盘 $DISK_TARGET 上进行安装。" 8 40
+
     # 交互式获取其他配置
-    [ -z "$HOSTNAME" ] && read -p "请输入主机名: " HOSTNAME
-    [ -z "$USERNAME" ] && read -p "请输入新用户名: " USERNAME
-    [ -z "$PASSWORD" ] && read -sp "请输入用户密码: " PASSWORD && echo
+    [ -z "$HOSTNAME" ] && HOSTNAME=$(dialog --title "设置主机名" --inputbox "请输入主机名:" 8 40 --stdout)
+    [ -z "$USERNAME" ] && USERNAME=$(dialog --title "创建用户" --inputbox "请输入新用户名:" 8 40 --stdout)
+    if [ -z "$PASSWORD" ]; then
+        PASSWORD=$(dialog --title "设置密码" --passwordbox "请输入用户 '$USERNAME' 的密码:" 8 40 --stdout)
+        local pass2=$(dialog --title "确认密码" --passwordbox "请再次输入密码:" 8 40 --stdout)
+        if [ "$PASSWORD" != "$pass2" ]; then
+            dialog --title "错误" --msgbox "两次输入的密码不匹配！" 8 40
+            exit 1
+        fi
+    fi
 
     # 交互式设置SWAP分区大小
     if [ -z "$SWAP_SIZE" ]; then
-        MEM_TOTAL_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-        MEM_TOTAL_GB=$(( (MEM_TOTAL_KB / 1024 / 1024) + 1 )) # 向上取整
-        read -p "请输入SWAP分区大小 (单位GB, 留空则默认和内存大小一致: ${MEM_TOTAL_GB}GB): " USER_SWAP_SIZE
+        local MEM_TOTAL_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        local MEM_TOTAL_GB=$(( (MEM_TOTAL_KB / 1024 / 1024) + 1 ))
+        local USER_SWAP_SIZE=$(dialog --title "设置SWAP" --inputbox "请输入SWAP分区大小 (单位GB, 留空则默认和内存大小一致):" 8 60 "$MEM_TOTAL_GB" --stdout)
         if [ -z "$USER_SWAP_SIZE" ]; then
             SWAP_SIZE="${MEM_TOTAL_GB}G"
+        elif [[ "$USER_SWAP_SIZE" =~ ^[0-9]+$ ]]; then
+            SWAP_SIZE="${USER_SWAP_SIZE}G"
         else
-            # 检查用户输入是否为数字，并添加G后缀
-            if [[ "$USER_SWAP_SIZE" =~ ^[0-9]+$ ]]; then
-                SWAP_SIZE="${USER_SWAP_SIZE}G"
-            else
-                echo "无效的SWAP大小输入，将使用默认值 ${MEM_TOTAL_GB}GB。"
-                SWAP_SIZE="${MEM_TOTAL_GB}G"
-            fi
+            dialog --title "警告" --msgbox "无效的SWAP大小输入，将使用默认值 ${MEM_TOTAL_GB}GB。" 8 60
+            SWAP_SIZE="${MEM_TOTAL_GB}G"
         fi
     fi
-    echo "SWAP分区大小将设置为: $SWAP_SIZE"
+    dialog --title "SWAP确认" --msgbox "SWAP分区大小将设置为: $SWAP_SIZE" 8 40
+    
+    trap - EXIT
 }

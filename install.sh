@@ -77,6 +77,19 @@ source "$(dirname "$0")/chroot_config.sh"
 main() {
     print_welcome
     check_root
+    
+    # 检查并安装 dialog
+    if ! command -v dialog &> /dev/null; then
+        echo "--> 'dialog' 未安装，正在尝试自动安装..."
+        pacman -Sy --noconfirm dialog
+        if ! command -v dialog &> /dev/null; then
+            echo "错误：'dialog' 安装失败。请检查网络连接或手动安装后重试。"
+            exit 1
+        else
+            echo "--> 'dialog' 安装成功。"
+        fi
+    fi
+
     select_packages # 在交互式设置之前选择软件包，因为 dialog 需要在 chroot 环境外运行
     interactive_setup
     

@@ -4,15 +4,27 @@
 
 # 磁盘分区
 partition_disk() {
+    # 在函数开始时启用错误即停，确保任何命令失败都会中止脚本
+    set -e
+    
     echo "--> 正在对 $DISK_TARGET 进行分区..."
+    
+    # 清理和创建GPT
+    echo "执行: wipefs -a \"$DISK_TARGET\""
     wipefs -a "$DISK_TARGET"
+    echo "执行: sgdisk -Z \"$DISK_TARGET\""
     sgdisk -Z "$DISK_TARGET"
+    echo "执行: sgdisk -g \"$DISK_TARGET\""
     sgdisk -g "$DISK_TARGET"
 
+    # 创建分区
+    echo "执行: sgdisk -n 1:0:+\"$EFI_SIZE\" -t 1:ef00 -c 1:\"EFI System Partition\""
     sgdisk -n 1:0:+"$EFI_SIZE" -t 1:ef00 -c 1:"EFI System Partition"
     
     if [ -n "$SWAP_SIZE" ]; then
+        echo "执行: sgdisk -n 2:0:+\"$SWAP_SIZE\" -t 2:8200 -c 2:\"Linux Swap\""
         sgdisk -n 2:0:+"$SWAP_SIZE" -t 2:8200 -c 2:"Linux Swap"
+        echo "执行: sgdisk -n 3:0:0 -t 3:8300 -c 3:\"Linux Root (Btrfs)\""
         sgdisk -n 3:0:0 -t 3:8300 -c 3:"Linux Root (Btrfs)"
         if [[ $DISK_TARGET == /dev/nvme* || $DISK_TARGET == /dev/mmcblk* ]]; then
             EFI_PART="${DISK_TARGET}p1"
@@ -24,6 +36,7 @@ partition_disk() {
             ROOT_PART="${DISK_TARGET}3"
         fi
     else
+        echo "执行: sgdisk -n 2:0:0 -t 2:8300 -c 2:\"Linux Root (Btrfs)\""
         sgdisk -n 2:0:0 -t 2:8300 -c 2:"Linux Root (Btrfs)"
         if [[ $DISK_TARGET == /dev/nvme* || $DISK_TARGET == /dev/mmcblk* ]]; then
             EFI_PART="${DISK_TARGET}p1"
@@ -33,6 +46,10 @@ partition_disk() {
             ROOT_PART="${DISK_TARGET}2"
         fi
     fi
+
+    # 验证分区结果
+    echo "--> 分区命令执行完毕，正在验证分区表..."
+    sgdisk -p "$DISK_TARGET"
 
     partprobe "$DISK_TARGET"
     
@@ -61,6 +78,9 @@ partition_disk() {
     [ -n "$SWAP_PART" ] && mkswap "$SWAP_PART"
     mkfs.btrfs -f -L ArchRoot "$ROOT_PART"
     echo "--> 分区完成。"
+    
+    # 在函数结束时恢复默认行为
+    set +e
 }
 
 # 挂载文件系统和创建Btrfs子卷
