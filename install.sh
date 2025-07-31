@@ -15,8 +15,8 @@ TIMEZONE="Asia/Shanghai"
 
 # 磁盘和分区
 DISK_TARGET="" # 目标磁盘，例如 /dev/sda。留空则进入交互选择模式
-EFI_SIZE="512M"
-SWAP_SIZE="4G" # 留空则不创建Swap分区
+EFI_SIZE="1024M"
+SWAP_SIZE="" # 留空则不创建Swap分区
 
 # 桌面环境 ('kde', 'gnome', 'xfce', 'cinnamon', 'mate', 'budgie', 'deepin', 'lxqt', 'cosmic', 'none')
 DESKTOP_ENV="kde"

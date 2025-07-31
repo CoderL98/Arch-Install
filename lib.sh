@@ -97,4 +97,23 @@ interactive_setup() {
     [ -z "$HOSTNAME" ] && read -p "请输入主机名: " HOSTNAME
     [ -z "$USERNAME" ] && read -p "请输入新用户名: " USERNAME
     [ -z "$PASSWORD" ] && read -sp "请输入用户密码: " PASSWORD && echo
+
+    # 交互式设置SWAP分区大小
+    if [ -z "$SWAP_SIZE" ]; then
+        MEM_TOTAL_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        MEM_TOTAL_GB=$(( (MEM_TOTAL_KB / 1024 / 1024) + 1 )) # 向上取整
+        read -p "请输入SWAP分区大小 (单位GB, 留空则默认和内存大小一致: ${MEM_TOTAL_GB}GB): " USER_SWAP_SIZE
+        if [ -z "$USER_SWAP_SIZE" ]; then
+            SWAP_SIZE="${MEM_TOTAL_GB}G"
+        else
+            # 检查用户输入是否为数字，并添加G后缀
+            if [[ "$USER_SWAP_SIZE" =~ ^[0-9]+$ ]]; then
+                SWAP_SIZE="${USER_SWAP_SIZE}G"
+            else
+                echo "无效的SWAP大小输入，将使用默认值 ${MEM_TOTAL_GB}GB。"
+                SWAP_SIZE="${MEM_TOTAL_GB}G"
+            fi
+        fi
+    fi
+    echo "SWAP分区大小将设置为: $SWAP_SIZE"
 }
